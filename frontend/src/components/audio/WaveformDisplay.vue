@@ -1,57 +1,49 @@
-<template>
-  <div
-    ref="container"
-    class="relative w-full bg-gray-800 rounded-lg overflow-hidden"
-    :class="{ 'h-48': !comparisonMode, 'h-96': comparisonMode }"
-  >
-    <!-- Main waveform -->
-    <div ref="waveform" class="w-full h-1/2" />
+&lt;template&gt;
+  &lt;div class="relative h-64 bg-gray-900"&gt;
+    &lt;!-- Main waveform container --&gt;
+    &lt;div ref="waveformRef" class="absolute inset-0"&gt;&lt;/div&gt;
 
-    <!-- Comparison waveform (if in comparison mode) -->
-    <div
+    &lt;!-- Comparison waveform container --&gt;
+    &lt;div
       v-if="comparisonMode"
-      ref="comparisonWaveform"
-      class="w-full h-1/2 border-t border-gray-700"
-    />
+      ref="comparisonWaveformRef"
+      class="absolute inset-0 opacity-50"
+    &gt;&lt;/div&gt;
 
-    <!-- Time markers -->
-    <div
-      class="absolute bottom-0 left-0 right-0 flex justify-between px-2 py-1 text-xs text-gray-400 bg-gray-800 bg-opacity-75"
-    >
-      <span>{{ formatTime(currentTime) }}</span>
-      <span>{{ formatTime(duration) }}</span>
-    </div>
-
-    <!-- Loading overlay -->
-    <div
+    &lt;!-- Loading overlay --&gt;
+    &lt;div
       v-if="loading"
       class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75"
-    >
-      <svg
-        class="animate-spin h-8 w-8 text-blue-500"
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-      >
-        <circle
-          class="opacity-25"
-          cx="12"
-          cy="12"
-          r="10"
-          stroke="currentColor"
-          stroke-width="4"
-        />
-        <path
-          class="opacity-75"
-          fill="currentColor"
-          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-        />
-      </svg>
-    </div>
-  </div>
-</template>
+    &gt;
+      &lt;div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"&gt;&lt;/div&gt;
+    &lt;/div&gt;
 
-<script setup>
+    &lt;!-- Error overlay --&gt;
+    &lt;div
+      v-if="error"
+      class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75"
+    &gt;
+      &lt;div class="text-red-500 text-center"&gt;
+        &lt;svg
+          class="w-12 h-12 mx-auto mb-2"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        &gt;
+          &lt;path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+          /&gt;
+        &lt;/svg&gt;
+        &lt;p&gt;{{ error }}&lt;/p&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/template&gt;
+
+&lt;script setup&gt;
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import WaveSurfer from 'wavesurfer.js'
 
@@ -68,14 +60,6 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
-  peaks: {
-    type: Array,
-    default: () => []
-  },
-  comparisonPeaks: {
-    type: Array,
-    default: () => []
-  },
   playing: {
     type: Boolean,
     default: false
@@ -84,90 +68,137 @@ const props = defineProps({
 
 const emit = defineEmits(['timeupdate', 'ready', 'finish', 'error'])
 
-const container = ref(null)
-const waveform = ref(null)
-const comparisonWaveform = ref(null)
+const waveformRef = ref(null)
+const comparisonWaveformRef = ref(null)
 const wavesurfer = ref(null)
 const comparisonWavesurfer = ref(null)
 const loading = ref(true)
-const currentTime = ref(0)
-const duration = ref(0)
+const error = ref(null)
 
-// Initialize WaveSurfer instances
-onMounted(async () => {
-  // Create main waveform
-  wavesurfer.value = WaveSurfer.create({
-    container: waveform.value,
-    waveColor: '#4a9eff',
-    progressColor: '#2563eb',
-    cursorColor: '#60a5fa',
-    cursorWidth: 2,
-    height: props.comparisonMode ? 128 : 200,
-    normalize: true,
-    responsive: true,
-    fillParent: true,
-    minPxPerSec: 50,
-    plugins: []
-  })
+// Initialize main waveform
+const initWaveform = async () => {
+  if (!waveformRef.value) return
 
-  // Create comparison waveform if in comparison mode
-  if (props.comparisonMode && props.comparisonUrl) {
-    comparisonWavesurfer.value = WaveSurfer.create({
-      container: comparisonWaveform.value,
-      waveColor: '#22c55e',
-      progressColor: '#16a34a',
-      cursorColor: '#4ade80',
-      cursorWidth: 2,
-      height: 128,
-      normalize: true,
-      responsive: true,
-      fillParent: true,
-      minPxPerSec: 50,
-      plugins: []
-    })
-  }
-
-  // Set up event listeners
-  wavesurfer.value.on('ready', () => {
-    loading.value = false
-    duration.value = wavesurfer.value.getDuration()
-    emit('ready')
-  })
-
-  wavesurfer.value.on('audioprocess', (time) => {
-    currentTime.value = time
-    emit('timeupdate', time)
-  })
-
-  wavesurfer.value.on('finish', () => {
-    emit('finish')
-  })
-
-  wavesurfer.value.on('error', (error) => {
-    emit('error', error)
-  })
-
-  // Load audio
   try {
-    if (props.peaks.length > 0) {
-      await wavesurfer.value.load(props.audioUrl, props.peaks)
-    } else {
-      await wavesurfer.value.load(props.audioUrl)
-    }
+    wavesurfer.value = WaveSurfer.create({
+      container: waveformRef.value,
+      waveColor: '#4B5563',
+      progressColor: '#3B82F6',
+      cursorColor: '#60A5FA',
+      barWidth: 2,
+      barGap: 1,
+      responsive: true,
+      height: 256,
+      normalize: true,
+      partialRender: true
+    })
 
-    if (props.comparisonMode && props.comparisonUrl) {
-      if (props.comparisonPeaks.length > 0) {
-        await comparisonWavesurfer.value.load(props.comparisonUrl, props.comparisonPeaks)
-      } else {
-        await comparisonWavesurfer.value.load(props.comparisonUrl)
+    wavesurfer.value.on('ready', () => {
+      loading.value = false
+      emit('ready', wavesurfer.value.getDuration())
+    })
+
+    wavesurfer.value.on('audioprocess', () => {
+      emit('timeupdate', wavesurfer.value.getCurrentTime())
+    })
+
+    wavesurfer.value.on('finish', () => {
+      emit('finish')
+    })
+
+    wavesurfer.value.on('error', (err) => {
+      error.value = 'Error loading audio file'
+      emit('error', err)
+    })
+
+    await wavesurfer.value.load(props.audioUrl)
+  } catch (err) {
+    error.value = 'Error initializing waveform'
+    emit('error', err)
+  }
+}
+
+// Initialize comparison waveform
+const initComparisonWaveform = async () => {
+  if (!comparisonWaveformRef.value || !props.comparisonUrl) return
+
+  try {
+    comparisonWavesurfer.value = WaveSurfer.create({
+      container: comparisonWaveformRef.value,
+      waveColor: '#9CA3AF',
+      progressColor: '#60A5FA',
+      cursorColor: '#60A5FA',
+      barWidth: 2,
+      barGap: 1,
+      responsive: true,
+      height: 256,
+      normalize: true,
+      partialRender: true
+    })
+
+    comparisonWavesurfer.value.on('ready', () => {
+      if (wavesurfer.value.isPlaying()) {
+        comparisonWavesurfer.value.play()
       }
+    })
+
+    await comparisonWavesurfer.value.load(props.comparisonUrl)
+  } catch (err) {
+    error.value = 'Error initializing comparison waveform'
+    emit('error', err)
+  }
+}
+
+// Watch for changes in playing state
+watch(() => props.playing, (newVal) => {
+  if (!wavesurfer.value) return
+
+  if (newVal) {
+    wavesurfer.value.play()
+    if (props.comparisonMode && comparisonWavesurfer.value) {
+      comparisonWavesurfer.value.play()
     }
-  } catch (error) {
-    emit('error', error)
+  } else {
+    wavesurfer.value.pause()
+    if (props.comparisonMode && comparisonWavesurfer.value) {
+      comparisonWavesurfer.value.pause()
+    }
   }
 })
 
-// Clean up on component unmount
+// Watch for changes in comparison mode and URL
+watch([() => props.comparisonMode, () => props.comparisonUrl], async ([newMode, newUrl]) => {
+  if (newMode && newUrl) {
+    if (!comparisonWavesurfer.value) {
+      await initComparisonWaveform()
+    } else if (comparisonWavesurfer.value.backend.source.url !== newUrl) {
+      await comparisonWavesurfer.value.load(newUrl)
+    }
+  }
+})
+
+// Watch for changes in audio URL
+watch(() => props.audioUrl, async (newUrl) => {
+  if (wavesurfer.value && newUrl) {
+    loading.value = true
+    error.value = null
+    try {
+      await wavesurfer.value.load(newUrl)
+    } catch (err) {
+      error.value = 'Error loading audio file'
+      emit('error', err)
+    }
+  }
+})
+
+// Lifecycle hooks
+onMounted(async () => {
+  await initWaveform()
+  if (props.comparisonMode && props.comparisonUrl) {
+    await initComparisonWaveform()
+  }
+})
+
 onBeforeUnmount(() => {
   if (wavesurfer.value) {
     wavesurfer.value.destroy()
@@ -177,29 +208,23 @@ onBeforeUnmount(() => {
   }
 })
 
-// Watch for playing state changes
-watch(
-  () => props.playing,
-  (newVal) => {
-    if (newVal) {
-      wavesurfer.value?.play()
-      if (props.comparisonMode) {
-        comparisonWavesurfer.value?.play()
+// Expose methods for parent component
+defineExpose({
+  seek: (time) => {
+    if (wavesurfer.value) {
+      wavesurfer.value.seekTo(time / wavesurfer.value.getDuration())
+      if (props.comparisonMode && comparisonWavesurfer.value) {
+        comparisonWavesurfer.value.seekTo(time / comparisonWavesurfer.value.getDuration())
       }
-    } else {
-      wavesurfer.value?.pause()
-      if (props.comparisonMode) {
-        comparisonWavesurfer.value?.pause()
+    }
+  },
+  setVolume: (volume) => {
+    if (wavesurfer.value) {
+      wavesurfer.value.setVolume(volume)
+      if (props.comparisonMode && comparisonWavesurfer.value) {
+        comparisonWavesurfer.value.setVolume(volume)
       }
     }
   }
-)
-
-// Format time in MM:SS format
-const formatTime = (time) => {
-  if (!time) return '00:00'
-  const minutes = Math.floor(time / 60)
-  const seconds = Math.floor(time % 60)
-  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-}
-</script>
+})
+&lt;/script&gt;
